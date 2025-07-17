@@ -2,6 +2,7 @@
 #include<graphics.h>
 #include"tools.h"
 #include<time.h>
+#include<math.h>
 #include<mmsystem.h>
 #pragma comment (lib,"winmm.lib")
 #define WIN_WIDTH 900
@@ -14,6 +15,7 @@ IMAGE imgBg;
 IMAGE imgBar;
 IMAGE imgCards[ZHI_WU_COUNT];
 IMAGE* imgZhiWu[ZHI_WU_COUNT][20];
+IMAGE imgZM[22];
 int curX, curY;
 int curZhiWu;
 int sunshine;
@@ -28,12 +30,28 @@ struct sunshineBall
 	int destY;
 	bool used;
 	int timer;
+	int xoff;
+	int yoff;
 };
 struct sunshineBall balls[10];
 IMAGE imgsunshineBall[29];
 
-
-
+struct zm {
+	int x, y;
+	int frameIndex;
+	int row;
+	bool used;
+	int speed;
+};
+struct zm zms[10];
+struct bullet {
+	int x, y;
+	bool used;
+	int speed;
+	int row;
+};
+struct bullet bullets[30];
+IMAGE imgBulletNormal;
 
 
 struct zhiwu map[3][9];
@@ -54,9 +72,12 @@ void gameInit() {
 	initgraph(WIN_WIDTH, WIN_HEIGHT,1);
 	loadimage(&imgBg, "res/bg.jpg");
 	loadimage(&imgBar, "res/bar5.png");
+	loadimage(&imgBulletNormal,"res/bullets/bullet_normal.png");
 	memset(imgZhiWu, 0, sizeof(imgZhiWu));
 	memset(map, 0, sizeof(map));
 	memset(balls, 0, sizeof(balls));
+	memset(zms,0,sizeof(zms));
+	memset(bullets, 0, sizeof(bullets));
 	char name[64];
 	for (int i = 0;i < ZHI_WU_COUNT;i++) {
 		sprintf_s(name, sizeof(name), "res/Cards/card_%d.png",i+1);
@@ -89,8 +110,22 @@ void gameInit() {
 	settextstyle(&f);
 	setbkmode(TRANSPARENT);
 	setcolor(BLACK);
+	for (int i = 0;i < 22;i++) {
+		sprintf_s(name, sizeof(name), "res/zm/%d.png", i + 1);
+		loadimage(&imgZM[i], name);
+	}
 
-
+}
+void drawZM() {
+	int i;
+	int zmCount = sizeof(zms) / sizeof(zms[0]);
+	for (i = 0; i < zmCount; i++) {
+		if (zms[i].used) {
+			IMAGE* img = &imgZM[zms[i].frameIndex];
+			putimagePNG(zms[i].x, zms[i].y - img->getheight(), img);
+		}
+	}
+	
 }
 void UpdateWindow() {
 	BeginBatchDraw();
@@ -119,7 +154,7 @@ void UpdateWindow() {
 	}
 	int ballMax = sizeof(balls) / sizeof(balls[0]);
 	for (int i = 0;i < ballMax; i++) {
-		if (balls[i].used) {
+		if (balls[i].used || balls[i].xoff) {
 			IMAGE * img = &imgsunshineBall[balls[i].frameIndex];
 			putimagePNG(balls[i].x, balls[i].y, img);
 		}
@@ -129,6 +164,14 @@ void UpdateWindow() {
 	sprintf_s(scoreText, sizeof(scoreText), "%d", sunshine);
 	outtextxy(276, 67, scoreText);
 
+	drawZM();
+	int bulletsMax = sizeof(bullets) / sizeof(bullets[0]);
+	for (int i = 0; i < bulletsMax; i++) {
+		if (bullets[i].used) {
+			putimagePNG(bullets[i].x, bullets[i].y, &imgBulletNormal);
+		}
+	}
+
 	EndBatchDraw();
 }
 void collectSunshine(ExMessage* msg) {
@@ -136,14 +179,21 @@ void collectSunshine(ExMessage* msg) {
 	int w = imgsunshineBall[0].getwidth();
 	int h = imgsunshineBall[0].getheight();
 	for (int i = 0; i < count; i++) {
-		if (balls[i].used) {
+		if (balls[i].used ) {
 			int x = balls[i].x;
 			int y = balls[i].y;
 			if (msg->x > x && msg->x <x + w
 				&& msg->y > y && msg->y < y + h) {
 				balls[i].used = false;
-				sunshine += 25;
+				//sunshine += 25;
 				mciSendString("play res/sunshine.mp3", 0, 0, 0);
+				float destY = 0;
+				float destX = 262;
+				float dx = balls[i].x - destX;
+				float dy = balls[i].y - destY;
+				float angle = atan2(dy, dx);
+				balls[i].xoff = 64 * cos(angle);
+				balls[i].yoff = 64 * sin(angle);
 			}
 			
 		}
@@ -159,16 +209,16 @@ void userClick() {
 				int index = (msg.x - 338) / 65;
 				status = 1;
 				curZhiWu = index + 1;
-				
+
 			}
 			else {
 				collectSunshine(&msg);
 			}
 		}
-		else if (msg.message == WM_MOUSEMOVE&& status == 1) {
+		else if (msg.message == WM_MOUSEMOVE && status == 1) {
 			curX = msg.x;
 			curY = msg.y;
-			
+
 		}
 		else if (msg.message == WM_LBUTTONUP) {
 			if (msg.x > 256 && msg.y > 179 && msg.y < 489) {
@@ -178,10 +228,10 @@ void userClick() {
 					map[row][col].type = curZhiWu;
 					map[row][col].frameIndex = 0;
 				}
-				
+
 
 			}
-			
+
 			curZhiWu = 0;
 			status = 0;
 		}
@@ -191,7 +241,7 @@ void userClick() {
 void creatSunshine() {
 	static int count = 0;
 	static int fre = 400;
-		count++;
+	count++;
 	if (count >= fre) {
 		fre = 200 + rand() % 200;
 		count = 0;
@@ -205,33 +255,151 @@ void creatSunshine() {
 		balls[i].y = 60;
 		balls[i].destY = 200 + (rand() % 4) * 90;
 		balls[i].timer = 0;
+		balls[i].xoff = 0;
+		balls[i].yoff = 0;
 
 	}
-	
+
 }
 void updatesunshine() {
-	int ballMax = sizeof(balls) / sizeof (balls[0]);
+	int ballMax = sizeof(balls) / sizeof(balls[0]);
 	for (int i = 0; i < ballMax; i++) {
 		if (balls[i].used) {
 			balls[i].frameIndex = (balls[i].frameIndex + 1) % 29;
 			if (balls[i].y < balls[i].destY) {
 				balls[i].y += 2;
 			}
-			else{
-			
+			else {
+
 				balls[i].timer++;
-				
+
 				if (balls[i].timer > 100) {
 					balls[i].used = false;
 				}
-				
+
 
 			}
 
 		}
+		else if (balls[i].xoff) {
+			float destY = 0;
+			float destX = 262;
+			float dx = balls[i].x - destX;
+			float dy = balls[i].y - destY;
+			float angle = atan2(dy, dx);
+			balls[i].xoff = 4 * cos(angle);
+			balls[i].yoff = 4 * sin(angle);
+			balls[i].x -= balls[i].xoff;
+			balls[i].y -= balls[i].yoff;
+			if (balls[i].y < 0 || balls[i].x < 262) {
+				balls[i].xoff = 0;
+				balls[i].yoff = 0;
+				sunshine += 25;
+			}
+		}
 	}
 
 
+}
+
+void creatZM() {
+	static int zmFre = 200;
+	static int count = 0;
+	count++;
+	if (count > zmFre) {
+		count = 0;
+		zmFre = rand() % 200 + 300;
+		int i;
+		int zmMax = sizeof(zms) / sizeof(zms[0]);
+		for (i = 0; i < zmMax && zms[i].used;i++);
+		if (i < zmMax) {
+			zms[i].used = true;
+			zms[i].x = WIN_WIDTH;
+			zms[i].row = rand() % 3;
+			zms[i].y = 172 + (1 + zms[i].row) * 100;
+			zms[i].speed = 1;
+			
+		}
+	}
+
+}
+void updateZM() {
+	int i;
+	int zmMax = sizeof(zms) / sizeof(zms[0]);
+	static int count = 0;
+	count++;
+	if(count > 2){
+		count = 0;
+		for (i = 0; i < zmMax;i++) {
+			if (zms[i].used) {
+				zms[i].x -= zms[i].speed;
+				if (zms[i].x < 170) {
+					printf("game over\n");
+					MessageBox(NULL, "over", "over", 0);
+					exit(0);
+				}
+			}
+		}
+	}
+	
+	static int count2 = 0;
+	count2++;
+	if (count2 > 4) {
+		count2 = 0;
+		for (i = 0;i < zmMax; i++) {
+			if (zms[i].used) {
+				zms[i].frameIndex = (zms[i].frameIndex + 1) % 22;
+			}
+		}
+	}
+
+	
+}
+void updateBullets() {
+	int countMax = sizeof(bullets) / sizeof(bullets[0]);
+	for (int i = 0; i < countMax; i++) {
+		if (bullets[i].used) {
+			bullets[i].x += bullets[i].speed;
+			if (bullets[i].x > WIN_WIDTH) {
+				bullets[i].used = false;
+			}
+
+
+		}
+	}
+}
+void shoot() {
+	int lines[3] = { 0 };
+	int zmCount = sizeof(zms) / sizeof(zms[0]);
+	int bulletMax = sizeof(bullets) / sizeof(bullets[0]);
+	int dangerX = WIN_WIDTH - imgZM[0].getwidth();
+	for (int i = 0; i < zmCount; i++) {
+		if (zms[i].used && zms[i].x < dangerX) {
+			lines[zms[i].row] = 1;
+		}
+	}
+	for (int i = 0;i < 3;i++) {
+		for (int j = 0; j < 9; j++) {
+			if (map[i][j].type == WAN_DOU + 1 && lines[i]) {
+				static int count = 0;
+				count++;
+				if (count > 20) {
+					count = 0;
+					int k;
+					for (k = 0;k < bulletMax && bullets[k].used; k++);
+					if (k < bulletMax) {
+						bullets[k].used = true;
+						bullets[k].row = i;
+						bullets[k].speed = 5;
+						int zwX = 256 + j * 81;
+						int zwY = 179 + i * 102 + 14;
+						bullets[k].x = zwX + imgZhiWu[map[i][j].type - 1][0]->getwidth()-10;
+						bullets[k].y = zwY + 5;
+					}
+				}
+			}
+		}
+	}
 }
 void updateGame() {
 	for (int i = 0;i < 3;i++) {
@@ -250,6 +418,10 @@ void updateGame() {
 	}
 	creatSunshine();
 	updatesunshine();
+	creatZM();
+	updateZM();
+	shoot();
+	updateBullets();
 }
 
 void startUI() {
@@ -281,17 +453,6 @@ void startUI() {
 
 }
 
-void releaseResources() {
-	for (int i = 0; i < ZHI_WU_COUNT; i++) {
-		for (int j = 0; j < 20; j++) {
-			if (imgZhiWu[i][j] != NULL) {
-				delete imgZhiWu[i][j];  
-				imgZhiWu[i][j] = NULL;
-			}
-		}
-	}
-}
-
 
 
 
@@ -305,9 +466,7 @@ int main(void) {
 	while (1) {
 		userClick();
 		timer += getDelay();
-		if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
-			break;  
-		}
+		
 		if (timer > 20) {
 			flag = true;
 			timer = 0;
@@ -321,8 +480,6 @@ int main(void) {
 	    
 	}
 	
-
-	releaseResources();
 	system("pause");
 	return 0;
 }
