@@ -19,6 +19,8 @@ IMAGE imgZM[22];
 int curX, curY;
 int curZhiWu;
 int sunshine;
+
+
 struct zhiwu {
 	int type;
 	int frameIndex;
@@ -42,6 +44,7 @@ struct zm {
 	int row;
 	bool used;
 	int speed;
+	int blood;
 };
 struct zm zms[10];
 struct bullet {
@@ -49,9 +52,12 @@ struct bullet {
 	bool used;
 	int speed;
 	int row;
+	bool blast;
+	int frameIndex;
 };
 struct bullet bullets[30];
 IMAGE imgBulletNormal;
+IMAGE imgBullBlast[4];
 
 
 struct zhiwu map[3][9];
@@ -78,6 +84,7 @@ void gameInit() {
 	memset(balls, 0, sizeof(balls));
 	memset(zms,0,sizeof(zms));
 	memset(bullets, 0, sizeof(bullets));
+	
 	char name[64];
 	for (int i = 0;i < ZHI_WU_COUNT;i++) {
 		sprintf_s(name, sizeof(name), "res/Cards/card_%d.png",i+1);
@@ -98,6 +105,13 @@ void gameInit() {
 		sprintf_s(name, sizeof(name), "res/sunshine/%d.png",i + 1);
 		loadimage(&imgsunshineBall[i], name);
 
+	}
+	loadimage(&imgBullBlast[3], "res/bullets/bullet_blast.png" );
+	for (int i = 0; i < 3; i++) {
+		float k = (i + 1) * 0.2;
+		loadimage(&imgBullBlast[i], "res/bullets/bullet_blast.png", 
+			imgBullBlast[3].getwidth()*k, 
+			imgBullBlast[3].getheight() * k,true);
 	}
 	sunshine = 50;
 	srand(time(NULL));
@@ -168,9 +182,18 @@ void UpdateWindow() {
 	int bulletsMax = sizeof(bullets) / sizeof(bullets[0]);
 	for (int i = 0; i < bulletsMax; i++) {
 		if (bullets[i].used) {
-			putimagePNG(bullets[i].x, bullets[i].y, &imgBulletNormal);
+			if (bullets[i].blast) {
+				IMAGE* img = &imgBullBlast[bullets[i].frameIndex];
+				putimagePNG(bullets[i].x, bullets[i].y, img);
+			}
+			else {
+				putimagePNG(bullets[i].x, bullets[i].y, &imgBulletNormal);
+			}
 		}
+			
+		
 	}
+
 
 	EndBatchDraw();
 }
@@ -303,6 +326,7 @@ void updatesunshine() {
 }
 
 void creatZM() {
+
 	static int zmFre = 200;
 	static int count = 0;
 	count++;
@@ -318,6 +342,7 @@ void creatZM() {
 			zms[i].row = rand() % 3;
 			zms[i].y = 172 + (1 + zms[i].row) * 100;
 			zms[i].speed = 1;
+			zms[i].blood = 100;
 			
 		}
 	}
@@ -362,8 +387,15 @@ void updateBullets() {
 			bullets[i].x += bullets[i].speed;
 			if (bullets[i].x > WIN_WIDTH) {
 				bullets[i].used = false;
+
 			}
 
+			if (bullets[i].blast) {
+				bullets[i].frameIndex++;
+				if (bullets[i].frameIndex >= 4) {
+					bullets[i].used = false;
+				}
+			}
 
 		}
 	}
@@ -391,6 +423,8 @@ void shoot() {
 						bullets[k].used = true;
 						bullets[k].row = i;
 						bullets[k].speed = 5;
+						bullets[k].blast = false;
+						bullets[k].frameIndex = 0;
 						int zwX = 256 + j * 81;
 						int zwY = 179 + i * 102 + 14;
 						bullets[k].x = zwX + imgZhiWu[map[i][j].type - 1][0]->getwidth()-10;
@@ -398,6 +432,25 @@ void shoot() {
 					}
 				}
 			}
+		}
+	}
+}
+void collisionCheck() {
+	int bCount = sizeof(bullets) / sizeof(bullets[0]);
+	int zCount = sizeof(zms) / sizeof(zms[0]);
+	for (int i = 0; i < bCount;i++) {
+		if (bullets[i].used == false || bullets[i].blast)continue;
+		for (int k = 0;k < zCount; k++) {
+			if (zms[k].used == false )continue;
+			int x1 = zms[k].x + 80;
+			int x2 = zms[k].x + 110;
+			int x = bullets[i].x;
+			if (bullets[i].row == zms[k].row &&bullets[i].x > x1 && x < x2) {
+				zms[k].blood -= 20;
+				bullets[i].blast = true;
+				bullets[i].speed = 0;
+			}
+
 		}
 	}
 }
@@ -422,6 +475,7 @@ void updateGame() {
 	updateZM();
 	shoot();
 	updateBullets();
+	collisionCheck();
 }
 
 void startUI() {
